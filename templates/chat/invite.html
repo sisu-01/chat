@@ -1,0 +1,84 @@
+{% extends 'layout/base.html' %}
+
+{% block title %}로비{% endblock %}
+
+{% block content %}
+<main>
+    <div class="container p-4 p-md-3">
+        너. 초대된거야..
+        <div class="input-group">
+            <span class="input-group-text">사용자</span>
+            <input type="text" id="username" class="form-control" maxlength="7">
+        </div>
+        <form id="loby_form" class="input-group my-3" method="post" action="{% url 'chat:room' %}">
+            {% csrf_token %}
+            <input type="hidden" id="room_id" name="room_id" value="{{room_id}}">
+            <input type="hidden" id="uuid" name="uuid" value="">
+        </form>
+        <input type="button" class="btn btn-outline-primary mt-2" value="Enter" onClick="fnc_room_knock('{{room_id}}')">
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+    {{ room_id|json_script:"id" }}
+<script>
+    const room_id = JSON.parse(document.getElementById('id').textContent);
+    const username = document.getElementById('username');
+    const xmlhttp = new XMLHttpRequest();
+
+    username.value = localStorage.getItem("username");
+    username.addEventListener('input', () => {
+        localStorage.setItem("username", username.value);
+    });
+
+    function fnc_xmlhttp(url, params, type){
+        xmlhttp.onreadystatechange = function(){
+            if (xmlhttp.readyState == XMLHttpRequest.DONE){
+                if (xmlhttp.status == 200) {
+                    let result = JSON.parse(xmlhttp.response);
+                    if(result.result){
+                        if(type == 'room_knock'){
+                            fnc_room_submit(result)
+                        }
+                    }else{
+                        alert(result.mess);
+                    }
+                }else{
+                    alert("code:"+xmlhttp.status+"\n"+"error:"+xmlhttp.statusText);
+                    console.log("code:"+xmlhttp.status+"\n"+"error:"+xmlhttp.statusText);
+                }
+            }
+        };
+        xmlhttp.open("POST", url, true);
+        xmlhttp.setRequestHeader("X-CSRFToken", '{{ csrf_token }}');
+        xmlhttp.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+        xmlhttp.setRequestHeader("Content-Type", "application/json");
+        xmlhttp.send(JSON.stringify(params));
+    }
+
+    function fnc_room_knock(room_id){
+        let nm = username.value;
+        if(!nm){
+            alert('이름을 입력하세요');
+            username.focus();
+            return false;
+        }
+        let params = {
+            "room_id":room_id,
+            "uuid":localStorage.getItem("uuid")
+        }
+        fnc_xmlhttp("{% url 'chat:room_knock' %}",params,"room_knock");
+    }
+
+    function fnc_room_submit(res){
+        if(res.enter){
+            document.getElementById('uuid').value = res.uuid;
+            document.getElementById('loby_form').submit();
+        }else{
+            alert(res.mess);
+            location.replace("{% url 'chat:index' %}");
+        }
+    }
+</script>
+{% endblock %}

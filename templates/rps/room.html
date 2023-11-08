@@ -1,0 +1,380 @@
+{% extends 'layout/base.html' %}
+
+{% block title %}{{room_name}}{% endblock %}
+
+{% block content %}
+    <style media="screen">
+        #game_list > li{
+            display: flex!important;
+        }
+        .flex_user_name{
+            padding: 0.5rem!important;
+            width: 75%!important;
+            flex-shrink: 0!important;
+        }
+        .me{
+            font-weight: bold;
+            font-size: x-large;
+        }
+        .flex_user_item{
+            padding: 0.5rem!important;
+            flex-grow: 1!important;
+        }
+    </style>
+    <main class="container d-flex">
+        <div style="width:300px; min-width:300px;">
+            <h3 class="fw-bold">{{room_name}}</h3>
+            <!-- <h6 class="fw-bold">접속 인원 : <span id="span_cu"></span>명</h6>
+            <h6 class="fw-bold"><span id="span_au"></span></h6> -->
+            <textarea id="chat-log" class="form-control" cols="100" rows="10" readonly></textarea>
+            <div class="input-group mb-3">
+                <input type="text" id="rps_message_input" class="form-control" placeholder="메시지 입력" aria-label="메시지 입력" aria-describedby="rps_message_submit">
+                <button type="button" id="rps_message_submit" class="btn btn-outline-primary"><i class="fa-solid fa-message"></i>&nbsp;보내기</button>
+            </div>
+            <div class="container p-4 p-md-3">
+                <button type="button" id="copy_url" class="btn btn-sm btn-outline-primary"><i class="fa-solid fa-link"></i>&nbsp;초대</button>
+                <input type="text" id="ShareUrl" class="d-none">
+            </div>
+        </div>
+        <div class="w-100 p-4">
+            <div class="">
+                <div id="ready_button" class="">
+                    <button type="button" name="button" class="btn btn-primary" onClick="fnc_ready();">준비</button>
+                </div>
+                <div id="start_button" class="d-none">
+                    <button type="button" name="button" class="btn bg-success text-white" onClick="fnc_start();"><i class="fa-solid fa-play"></i>&nbsp;시작</button>
+                </div>
+                <div class="card" style="width: 18rem;">
+                    <ul id="wow" class="list-group list-group-flush">
+                        {% if user_list %}
+                        {% for user in user_list %}
+                            <li id="{{user.user_uuid}}" class="list-group-item d-flex {% if user.user_state == 1 and user.user_host != 1 %}bg-info{% endif %}">
+                                <span class="flex-grow-1">{{user.user_name}}({{user.user_ip}})</span>
+                                <span class="flex-shrink-1">{% if user.user_host %}<i class="fa-solid fa-gamepad"></i>{% endif %}</span>
+                            </li>
+                        {% endfor %}
+                        {% endif %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    {% comment %} <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#game_modal">
+      Launch static backdrop modal
+    </button> {% endcomment %}
+    <!-- Modal -->
+    <div class="modal fade" id="game_modal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="game_modalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-md">
+            <div class="modal-content">
+                <dlv class="modal-header">
+                    <div class="d-flex"><div>라운드 :&nbsp;</div><div id="div_round"></div></div>
+                </dlv>
+                <ul class="list-group" id="game_list">
+                </ul>
+                <textarea class="form-control" id="game_info" rows="1" readonly></textarea>
+                <div class="btn-group" id="rps_buttons" role="group" aria-label="Basic example">
+                    <button type="button" class="btn btn-outline-primary" onClick="fnc_rps('s')"><i class="fa-solid fa-hand-scissors"></i>&nbsp;가위</button>
+                    <button type="button" class="btn btn-outline-primary" onClick="fnc_rps('r')"><i class="fa-solid fa-hand-back-fist"></i>&nbsp;바위</button>
+                    <button type="button" class="btn btn-outline-primary" onClick="fnc_rps('p')"><i class="fa-solid fa-hand"></i>&nbsp;보</button>
+                </div>
+                <div class="modal-footer d-none" id="btn_init" >
+                    <button type="button" class="btn btn-primary" onClick="fnc_init()"><i class="fa-solid fa-right-from-bracket"></i>&nbsp;나가기</button>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    {{ room_id|json_script:"id" }}
+    {{ room_name|json_script:"room_name" }}
+    {{ user_ip|json_script:"user_ip" }}
+    <script>
+        window.onbeforeunload = function (e) {
+            //사이트에서 나가시겠습니까?
+            //return 0;
+	    };
+
+        const room_id = JSON.parse(document.getElementById('id').textContent);
+        const user_ip = JSON.parse(document.getElementById('user_ip').textContent);
+        const textarea = document.getElementById('chat-log');
+        const loc_user_name = localStorage.getItem("user_name");
+        localStorage.setItem("user_uuid","{{user_uuid}}");
+        const loc_user_uuid = localStorage.getItem("user_uuid");
+        const myModal = new bootstrap.Modal(document.getElementById('game_modal'));
+        const div_round = document.getElementById('div_round');
+
+        let user_host = 0;
+        let user_state = 0;
+        let state_flag = {};
+
+        let start = false;
+        let rps_button = true;
+
+        const rpsSocket = new WebSocket(
+            'ws://'
+            + window.location.host
+            + '/ws/rps/'
+            + room_id
+            + '/'
+        );
+
+        rpsSocket.onopen = function(e) {
+            rpsSocket.send(JSON.stringify({
+                command     : 'joined',
+                user_uuid   : loc_user_uuid,
+                user_name   : loc_user_name,
+                user_ip     : user_ip,
+            }));
+        }
+
+        rpsSocket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            const command = data.command;
+
+            let message;
+            if(command === "joined"){
+                document.getElementById('wow').innerHTML += `
+                        <li id="${data.user_uuid}" class="list-group-item d-flex">
+                            <span class="flex-grow-1">${data.user_name}(${data.user_ip})</span>
+                            <span class="flex-shrink-1"></span>
+                        </li>
+                `;
+                let key = data.user_uuid.replace(/\-/g,'');
+                state_flag[key] = false;
+                message = data.user_name+"님이 로비에 참가하셨습니다.";
+            }
+            if(command === "chat"){
+                message = data.user_name+'('+data.user_ip+') : '+data.chat;
+            }
+            if(command === "host"){
+                document.getElementById(data.user_uuid).lastElementChild.innerHTML = `<i class="fa-solid fa-gamepad"></i>`;
+                document.getElementById(data.user_uuid).classList.remove('bg-info');
+                message = data.info;
+                if(loc_user_uuid==data.user_uuid){
+                    user_host = 1;
+                    user_state = 0;
+                    let key = data.user_uuid.replace(/\-/g,'');
+                    delete state_flag[key];
+                    //대충 방장만 쓰는 버튼들 활성화 하고 일반 버튼들은 비활성화해
+                    document.getElementById('ready_button').classList.add('d-none')
+                    document.getElementById('start_button').classList.remove('d-none')
+                    alert("당신이 방장입니다!");
+                }
+            }
+            if(command === "state"){
+                if(data.user_state){
+                    document.getElementById(data.user_uuid).classList.add('bg-info');
+                    let key = data.user_uuid.replace(/\-/g,'');
+                    state_flag[key] = true;
+                }else{
+                    document.getElementById(data.user_uuid).classList.remove('bg-info');
+                    let key = data.user_uuid.replace(/\-/g,'');
+                    state_flag[key] = false;
+                }
+                message = false;
+            }
+            if (command === "start") {
+                div_round.innerHTML = "1";
+                data.user_list.forEach(el => {
+                    let temp = '';
+                    if(el.user_uuid === loc_user_uuid){
+                        temp = ' me';
+                    }
+                    document.getElementById('game_list').innerHTML += `
+                    <li class="list-group-item" id="${el.user_uuid}_game">
+                        <div class="flex_user_name ${temp}">${el.user_name}</div>
+                        <div class="flex_user_item"></div>
+                        <div class="flex_user_item"></div>
+                    </li>
+                    `;
+                    //getElementsByClassName
+                })
+                myModal.show();
+                start = true;
+                if(!user_host){
+                    fnc_ready();
+                }
+
+            }
+            if(command === "rps"){
+                let command2 = data.command2;
+                div_round.innerHTML = data.round;
+                
+                if(command2 === "draw"){
+                    document.getElementById('game_info').value = "비겼음!";
+                    rps_button = true;
+                    for(const key in data.gameInfo) {
+                        data.gameInfo[key].forEach(el => {
+                            let temp = document.getElementById(el+'_game').getElementsByClassName('flex_user_item');
+                            let result = {
+                                'r' : '-back-fist',
+                                'p' : '',
+                                's' : '-scissors',
+                            }
+                            temp[0].innerHTML = `<i class="fa-solid fa-hand${result[key]}"></i>`;
+                        })
+                    }
+                }
+                if(command2 === "go"){
+                    let foo = false;
+                    for(const key in data.gameInfo) {
+                        data.gameInfo[key].forEach(el => {
+                            let temp = document.getElementById(el+'_game').getElementsByClassName('flex_user_item');
+                            let result = {
+                                'r' : '-back-fist',
+                                'p' : '',
+                                's' : '-scissors',
+                            }
+                            temp[0].innerHTML = `<i class="fa-solid fa-hand${result[key]}"></i>`;
+                            if(key === data.winRps){
+                                if(el.includes(loc_user_uuid)){
+                                    alert("승리!");
+                                    rps_button = true;
+                                    foo = true;
+                                }
+                                temp[1].innerHTML = `<i class="fa-solid fa-heart"></i>`;
+                            }else{
+                                temp[1].innerHTML = `<i class="fa-solid fa-heart-crack"></i>`;
+                            }
+                        })
+                    }
+                    if(!foo){
+                        alert('패배..');
+                    }
+                }
+                if(command2 === "end"){
+                    start = false;
+                    let final = '';
+                    for(const key in data.gameInfo) {
+                        data.gameInfo[key].forEach(el => {
+                            let temp = document.getElementById(el+'_game').getElementsByClassName('flex_user_item');
+                            let result = {
+                                'r' : '-back-fist',
+                                'p' : '',
+                                's' : '-scissors',
+                            }
+                            temp[0].innerHTML = `<i class="fa-solid fa-hand${result[key]}"></i>`;
+                            if(key === data.winRps){
+                                temp[1].innerHTML = `<i class="fa-solid fa-trophy"></i>`;
+                                final = document.getElementById(el+'_game').getElementsByClassName('flex_user_name')[0].innerHTML;
+                            }else{
+                                temp[1].innerHTML = `<i class="fa-solid fa-heart-crack"></i>`;
+                            }
+                        })
+                    }
+                    document.getElementById('game_info').value = '-'+final+' 우승-';
+                    document.getElementById('btn_init').classList.remove('d-none');
+                    message = '🎉'+final+' 우승🎉';
+                }
+            }
+            if(command === "lefted"){
+                document.getElementById(data.user_uuid).remove()
+                let key = data.user_uuid.replace(/\-/g,'');
+                delete state_flag[key];
+                message = data.user_name+"님이 로비를 나가셨습니다.";
+            }
+            if(message){
+                textarea.value += (message + '\n');
+                textarea.scrollTop = textarea.scrollHeight;
+            }
+        };
+
+        rpsSocket.onclose = function(e) {
+            alert("연결 끊김!");
+            console.error('Rps socket closed unexpectedly');
+            console.log(e);
+        };
+
+        document.querySelector('#rps_message_input').focus();
+        document.querySelector('#rps_message_input').onkeyup = function(e) {
+            if (e.keyCode === 13) {  // enter, return
+                document.querySelector('#rps_message_submit').click();
+            }
+        };
+
+        document.querySelector('#rps_message_submit').onclick = function(e) {
+            const messageInputDom = document.querySelector('#rps_message_input');
+            const message = messageInputDom.value;
+            rpsSocket.send(JSON.stringify({
+                command     : 'chat',
+                chat        : message,
+                user_uuid   : loc_user_uuid,
+                user_name   : loc_user_name,
+                user_ip     : user_ip
+            }));
+            messageInputDom.value = '';
+            messageInputDom.focus();
+        };
+
+        document.getElementById('copy_url').onclick = function(e){
+            var obShareUrl = document.getElementById("ShareUrl");
+            obShareUrl.className = "test";
+            obShareUrl.value = "{% if request.is_secure %}https{% else %}http{% endif %}://{{ request.get_host }}{% url 'rps:index' %}?c="+room_id;  // 현재 URL 을 세팅해 줍니다.
+            obShareUrl.select();  // 해당 값이 선택되도록 select() 합니다
+            document.execCommand("copy"); // 클립보드에 복사합니다.
+            obShareUrl.blur(); // 선된것을 다시 선택안된것으로 바꿈니다.
+            obShareUrl.className = "d-none";
+            alert("링크 복사 완료!"); 
+        }
+
+        function fnc_ready(){
+            if(user_state == 0){
+                user_state = 1;
+            }else{
+                user_state = 0;
+            }
+            rpsSocket.send(JSON.stringify({
+                command     : 'state',
+                user_state  : user_state,
+                user_name   : loc_user_name,
+                user_uuid   : loc_user_uuid,
+                user_ip     : user_ip,
+            }));
+        }
+
+        function fnc_start(){
+            if(user_host){
+                if(Object.keys(state_flag).length === 0){
+                    alert('한 명 이상의 플레이어가 준비해야 합니다.');
+                    return false;
+                }else {
+                    let res;
+                    for (const key in state_flag) {
+                      res = state_flag[key];
+                      if (!state_flag[key]) {
+                        alert('모든 플레이어가 준비해야 합니다.');
+                        return false;
+                      }
+                    }
+                }
+            }
+            rpsSocket.send(JSON.stringify({
+                command     : 'start',
+                user_uuid   : loc_user_uuid,
+            }));
+        }
+
+        function fnc_rps(rps){
+            if(rps_button&&start){
+                rps_button = false;
+                rpsSocket.send(JSON.stringify({
+                    command     : 'rps',
+                    user_uuid   : loc_user_uuid,
+                    rps         : rps,
+                }));
+                document.getElementById('game_info').value = "다른 플레이어들을 기다리고 있습니다.";
+            }
+        }
+
+        function fnc_init(){
+            rps_button = true;
+            myModal.hide();
+            document.getElementById('game_list').innerHTML = '';
+            document.getElementById('game_info').value = '';
+            document.getElementById('btn_init').className += ' d-none';
+        }
+
+    </script>
+{% endblock %}

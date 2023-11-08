@@ -1,0 +1,113 @@
+{% extends 'layout/base.html' %}
+
+{% block title %}{{room_name}}{% endblock %}
+
+{% block content %}
+    <main>
+        <div class="container p-4 p-md-3">
+            <h3 class="fw-bold">{{room_name}}</h3>
+            <h6 class="fw-bold">접속 인원 : <span id="span_uc"></span>명</h6>
+            <h6 class="fw-bold"><span id="span_ap"></span></h6>
+            <textarea id="chat-log" class="form-control" cols="100" rows="10" readonly></textarea>
+            <div class="input-group mb-3">
+                <input type="text" id="chat-message-input" class="form-control" placeholder="메시지 입력" aria-label="메시지 입력" aria-describedby="chat-message-submit">
+                <button type="button" id="chat-message-submit" class="btn btn-outline-primary">보내기</button>
+            </div>
+            <button type="button" id="copy_url" class="btn btn-sm btn-outline-primary">url 복사</button>
+            <input type="text" id="ShareUrl" class="d-none">
+        </div>
+    </main>
+{% endblock %}
+
+{% block scripts %}
+    {{ room_id|json_script:"id" }}
+    {{ room_name|json_script:"room-name" }}
+    {{ ip|json_script:"ip" }}
+    <script>
+
+        window.onbeforeunload = function (e) {
+            return 0;
+	    };
+
+        const roomId = JSON.parse(document.getElementById('id').textContent);
+        const roomName = JSON.parse(document.getElementById('room-name').textContent);
+        const clientIp = JSON.parse(document.getElementById('ip').textContent);
+        const textarea = document.getElementById('chat-log');
+        const loc_username = localStorage.getItem("username");
+        localStorage.setItem("uuid","{{uuid}}");
+        const loc_uuid = localStorage.getItem("uuid");
+
+        const chatSocket = new WebSocket(
+            'ws://'
+            + window.location.host
+            + '/ws/chat/'
+            + roomId
+            + '/'
+        );
+
+        chatSocket.onopen = function(e) {
+            chatSocket.send(JSON.stringify({
+                command : 'joined',
+                info: loc_username+' just Joined',
+                username : loc_username,
+                uuid : loc_uuid,
+                clientIp : clientIp,
+            }));
+        }
+
+        chatSocket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            const command = data.command;
+
+            let message = '';
+            if(command === "joined"){
+                document.getElementById('span_uc').innerHTML  = data.users_count;
+                document.getElementById('span_ap').innerHTML  = data.all_players;
+                message = data.info;
+            }
+            if(command === "chat"){
+                message = data.username+'('+data.clientIp+') : '+data.chat;
+            }
+            textarea.value += (message + '\n');
+            textarea.scrollTop = textarea.scrollHeight;
+        };
+
+        chatSocket.onclose = function(e) {
+            alert("연결 끊김!");
+            console.error('Chat socket closed unexpectedly');
+            console.log(e);
+        };
+
+        document.querySelector('#chat-message-input').focus();
+        document.querySelector('#chat-message-input').onkeyup = function(e) {
+            if (e.keyCode === 13) {  // enter, return
+                document.querySelector('#chat-message-submit').click();
+            }
+        };
+
+        document.querySelector('#chat-message-submit').onclick = function(e) {
+            const messageInputDom = document.querySelector('#chat-message-input');
+            const message = messageInputDom.value;
+            chatSocket.send(JSON.stringify({
+                command : 'chat',
+                chat: message,
+                username : loc_username,
+                uuid : loc_uuid,
+                clientIp : clientIp
+            }));
+            messageInputDom.value = '';
+            messageInputDom.focus();
+        };
+
+        document.getElementById('copy_url').onclick = function(e){
+            var obShareUrl = document.getElementById("ShareUrl");
+            obShareUrl.className = "test";
+            obShareUrl.value = "{% if request.is_secure %}https{% else %}http{% endif %}://{{ request.get_host }}{% url 'chat:index' %}?c="+roomId;  // 현재 URL 을 세팅해 줍니다.
+            obShareUrl.select();  // 해당 값이 선택되도록 select() 합니다
+            document.execCommand("copy"); // 클립보드에 복사합니다.
+            obShareUrl.blur(); // 선된것을 다시 선택안된것으로 바꿈니다.
+            obShareUrl.className = "d-none";
+            alert("URL이 클립보드에 복사되었습니다"); 
+        }
+    </script>
+{% endblock %}

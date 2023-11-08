@@ -1,0 +1,14 @@
+{% extends 'layout/base.html' %}
+
+{% block title %}index{% endblock %}
+
+{% block content %}
+<main>
+    hello, world<br>hi, i'm toygame's index.html<br>
+    <a href="{% url 'chat:index' %}" class="btn btn-primary">chat</a>
+    <a href="{% url 'rps:index' %}" class="btn btn-primary">rps</a>
+</main>
+{% endblock %}
+
+{% block scripts %}
+{% endblock %}

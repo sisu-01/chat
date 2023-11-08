@@ -1,0 +1,84 @@
+{% extends 'layout/base.html' %}
+
+{% block title %}로비{% endblock %}
+
+{% block content %}
+<main>
+    <div class="container p-4 p-md-3">
+        방에 참여하도록 초대되었습니다!
+        <div class="input-group">
+            <span class="input-group-text"><i class="fa-solid fa-user"></i>&nbsp;사용자</span>
+            <input type="text" id="user_name" class="form-control" maxlength="7">
+        </div>
+        <form id="loby_form" class="input-group mt-3" method="post" action="{% url 'rps:room' %}">
+            {% csrf_token %}
+            <input type="hidden" id="room_id" name="room_id" value="{{room_id}}">
+            <input type="hidden" id="user_uuid" name="user_uuid" value="">
+        </form>
+        <button type="submit" class="btn btn-outline-primary mt-2 float-end" onClick="fnc_room_knock('{{room_id}}')"><i class="fa-solid fa-play"></i>&nbsp;참여</button>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+    {{ room_id|json_script:"id" }}
+<script>
+    const room_id = JSON.parse(document.getElementById('id').textContent);
+    const user_name = document.getElementById('user_name');
+    const xmlhttp = new XMLHttpRequest();
+
+    user_name.value = localStorage.getItem("user_name");
+    user_name.addEventListener('input', () => {
+        localStorage.setItem("user_name", user_name.value);
+    });
+
+    function fnc_xmlhttp(url, params, type){
+        xmlhttp.onreadystatechange = function(){
+            if (xmlhttp.readyState == XMLHttpRequest.DONE){
+                if (xmlhttp.status == 200) {
+                    let result = JSON.parse(xmlhttp.response);
+                    if(result.result){
+                        if(type == 'room_knock'){
+                            fnc_room_submit(result)
+                        }
+                    }else{
+                        alert(result.mess);
+                    }
+                }else{
+                    alert("code:"+xmlhttp.status+"\n"+"error:"+xmlhttp.statusText);
+                    console.log("code:"+xmlhttp.status+"\n"+"error:"+xmlhttp.statusText);
+                }
+            }
+        };
+        xmlhttp.open("POST", url, true);
+        xmlhttp.setRequestHeader("X-CSRFToken", '{{ csrf_token }}');
+        xmlhttp.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+        xmlhttp.setRequestHeader("Content-Type", "application/json");
+        xmlhttp.send(JSON.stringify(params));
+    }
+
+    function fnc_room_knock(room_id){
+        let nm = user_name.value;
+        if(!nm){
+            alert('이름을 입력하세요');
+            user_name.focus();
+            return false;
+        }
+        let params = {
+            "room_id":room_id,
+            "user_uuid":localStorage.getItem("user_uuid")
+        }
+        fnc_xmlhttp("{% url 'rps:room_knock' %}",params,"room_knock");
+    }
+
+    function fnc_room_submit(res){
+        if(res.enter){
+            document.getElementById('user_uuid').value = res.user_uuid;
+            document.getElementById('loby_form').submit();
+        }else{
+            alert(res.mess);
+            location.replace("{% url 'rps:index' %}");
+        }
+    }
+</script>
+{% endblock %}

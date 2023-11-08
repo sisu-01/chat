@@ -1,0 +1,158 @@
+{% extends 'layout/base.html' %}
+
+{% block title %}로비{% endblock %}
+
+{% block content %}
+<main>
+    <div class="container pt-4 pt-md-3">
+        <div class="input-group">
+            <span class="input-group-text"><i class="fa-solid fa-user"></i>&nbsp;사용자</span>
+            <input type="text" id="user_name" class="form-control" maxlength="7">
+        </div>
+        <form id="loby_form" class="input-group my-3" method="post" action="{% url 'rps:room' %}">
+            {% csrf_token %}
+            <input type="hidden" id="room_id" name="room_id" value="">
+            <input type="hidden" id="user_uuid" name="user_uuid" value="">
+            <span class="input-group-text"><i class="fa-solid fa-users-rectangle"></i>&nbsp;방 이름</span>
+            <input type="text" id="room_name" name="room_name" class="form-control" maxlength="10">
+            <span class="input-group-text"><i class="fa-solid fa-people-group"></i>&nbsp;최대인원</span>
+            <select id="maximum_user" name="maximum_user" class="form-select">
+              <option value="2">2명</option>
+              <option value="3">3명</option>
+              <option value="4" selected>4명</option>
+            </select>
+        </form>
+        <button type="submit" class="btn btn-outline-primary" id="room-name-submit"><i class="fa-solid fa-play"></i>&nbsp;시작</button>
+    </div>
+    <div class="container pt-4 pt-md-3">
+        <button type="button" id="btn_room_list" class="btn btn-primary" onClick="fnc_room_refresh();"><i class="fa-solid fa-arrows-rotate"></i>&nbsp;새로고침</button>
+        <div id="onlinerooms" class="row py-1">
+            <div class="spinner-border" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const user_name = document.getElementById('user_name');
+    const onlinerooms = document.getElementById('onlinerooms');
+    const xmlhttp = new XMLHttpRequest();
+
+    window.onload = function(){
+        fnc_room_refresh();
+    }
+
+    user_name.value = localStorage.getItem("user_name");
+    user_name.addEventListener('input', () => {
+        localStorage.setItem("user_name", user_name.value);
+    });
+
+    document.querySelector('#room-name-submit').onclick = function(e) {
+        let nm = user_name.value;
+        if(!nm){
+            alert('이름을 입력하세요');
+            user_name.focus();
+            return false;
+        }
+        var roomName = document.querySelector('#room_name').value;
+        var roomMax = document.querySelector('#maximum_user').value;
+        if(!roomName){
+            alert("방 이름을 입력해주세요.");
+            document.querySelector('#room_name').value = "";
+            document.querySelector('#room_name').focus();
+            return false;
+        }
+        document.getElementById('user_uuid').value = localStorage.getItem("user_uuid");
+        document.getElementById('loby_form').submit();
+    };
+
+    function fnc_xmlhttp(url, params, type){
+        xmlhttp.onreadystatechange = function(){
+            if (xmlhttp.readyState == XMLHttpRequest.DONE){
+                if (xmlhttp.status == 200) {
+                    let result = JSON.parse(xmlhttp.response);
+                    if(result.result){
+                        if(type == 'room_list'){
+                            fnc_room_list(result.res);
+                        }
+                        if(type == 'room_knock'){
+                            fnc_room_submit(result)
+                        }
+                    }else{
+                        alert(result.mess);
+                    }
+                }else{
+                    alert("code:"+xmlhttp.status+"\n"+"error:"+xmlhttp.statusText);
+                    console.log("code:"+xmlhttp.status+"\n"+"error:"+xmlhttp.statusText);
+                }
+            }
+        };
+        xmlhttp.open("POST", url, true);
+        xmlhttp.setRequestHeader("X-CSRFToken", '{{ csrf_token }}');
+        xmlhttp.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+        xmlhttp.setRequestHeader("Content-Type", "application/json");
+        xmlhttp.send(JSON.stringify(params));
+    }
+
+    function fnc_room_refresh(){
+        fnc_xmlhttp("{% url 'rps:room_list' %}",null,"room_list");
+    }
+
+    function fnc_room_list(params){
+        onlinerooms.innerHTML = '';
+
+        if(params.length > 0){
+            params.forEach(el => {
+                let button = '';
+                if(el.current_user>=el.maximum_user || el.room_state){
+                    button = `<button type="button" class="btn btn-primary btn-lg" disabled><i class="fa-solid fa-right-to-bracket"></i>&nbsp;접속</button>`;
+                }else{
+                    button = `<button type="button" class="btn btn-primary btn-lg" onClick="fnc_room_knock('${el.id}')"><i class="fa-solid fa-right-to-bracket"></i>&nbsp;접속</button>`;
+                }
+                onlinerooms.innerHTML += `
+                    <div id="${el.room_name}_${el.id}" class="col-sm-4 mb-2">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title fw-bold">${el.room_name}</h5>
+                                <h6 class="card-subtitle mb-2 text-muted"><i class="fa-solid fa-users"></i>&nbsp;인원수 : ${el.current_user} / ${el.maximum_user}</h6>
+                                ${button}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            })
+        }else{
+            onlinerooms.innerHTML ='<p id="no_room" class="">방이 없습니다.</p>';
+        }
+    }
+
+    function fnc_room_knock(room_id){
+        let nm = user_name.value;
+        if(!nm){
+            alert('이름을 입력하세요');
+            user_name.focus();
+            return false;
+        }
+        let params = {
+            "room_id":room_id,
+            "user_uuid":localStorage.getItem("user_uuid")
+        }
+        fnc_xmlhttp("{% url 'rps:room_knock' %}",params,"room_knock");
+    }
+
+    function fnc_room_submit(res){
+        localStorage.setItem("user_uuid", res.user_uuid);
+        if(res.enter){
+            document.getElementById('room_id').value = res.room_id;
+            document.getElementById('user_uuid').value = res.user_uuid;
+            document.getElementById('loby_form').submit();
+        }else{
+            alert(res.mess);
+            fnc_room_refresh();
+        }
+    }
+</script>
+{% endblock %}
